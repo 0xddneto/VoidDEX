@@ -9,6 +9,12 @@ const pool = new pg.Pool({
 });
 const REQUESTS_PER_MINUTE = 20;
 
+// Advisory session locks cannot use Neon's transaction pooler.
+const sessionUrl = new URL(process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? 'postgres://localhost/voidscan');
+if (sessionUrl.hostname.endsWith('.neon.tech')) sessionUrl.hostname = sessionUrl.hostname.replace('-pooler.', '.');
+const sessionPool = new pg.Pool({ connectionString: sessionUrl.toString(), max: 2,
+  connectionTimeoutMillis: 5_000, idleTimeoutMillis: 10_000, statement_timeout: 15_000 });
+
 export class RelayAdmissionError extends Error {
   constructor(message: string, readonly status: 409 | 429 | 503) {
     super(message);
@@ -75,7 +81,7 @@ export async function reserveRelay(surface: string, paymaster: Address, user: Ad
 }
 
 export async function submitWithRelayerLock(relayer: Address, surface: string, submit: () => Promise<Hex>) {
-  const client = await pool.connect().catch(() => null);
+  const client = await sessionPool.connect().catch(() => null);
   if (!client) throw new RelayAdmissionError('Relayer coordination is unavailable.', 503);
   const lockName = `void-relayer:${relayer.toLowerCase()}`;
   try {
@@ -95,6 +101,6 @@ export async function submitWithRelayerLock(relayer: Address, surface: string, s
     };
   } finally {
     await client.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [lockName]).catch(() => undefined);
-    client.release();
+    client.release(true);
   }
 }
