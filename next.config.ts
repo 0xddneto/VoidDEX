@@ -1,5 +1,4 @@
 import type { NextConfig } from 'next';
-import path from 'node:path';
 
 const securityHeaders = [
   {
@@ -24,14 +23,15 @@ const securityHeaders = [
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
   { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+  { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
 ] as const;
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  // VoidDEX intentionally consumes the same public deployment record and
-  // sponsored-receipt verifier as VoidScan. Root the build at the repository
-  // explicitly so Turbopack permits those two reviewed cross-app imports.
-  turbopack: { root: path.resolve(process.cwd(), '..') },
+  serverExternalPackages: ['pg'],
+  // Runtime imports are self-contained. Keeping the root inside this checkout
+  // ensures Vercel traces native dependencies such as `pg` into the function.
+  turbopack: { root: process.cwd() },
   async headers() {
     return [{ source: '/(.*)', headers: [...securityHeaders] }];
   },

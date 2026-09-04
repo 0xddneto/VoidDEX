@@ -4,24 +4,24 @@
   "runtime": "0x67fe2acba322f2d031dc79fd4dde997bd1ec9dae",
   "paymaster": "0x56fcd97b9ca8eb2c3a451c1b557708cdca7f62fd",
   "appFactory": "0x1e9826220b98a150f9aa4a644ad7af157f63c2ce",
-  "factory": "0x0AE6f2223B26Eb007Ac4E1fe9bF26427Ad72B159",
+  "factory": "0x45EC677b2caB2bB49a13ecCcd9561Bc5c1C6E9c7",
   "baseToken": "0x3a53442e32e6b4a4c8fb6989c6ba38411034f5e3",
   "pools": [
     {
-      "address": "0x57bB44d355daDE1dE9F8307314FFa1b2388f8A38",
+      "address": "0xDff0280D443A96fF10f1F54dD8088fA21e558110",
       "label": "VOID / tUSD",
-      "asset": "0x5be6929becf8056d98b51c116d78e7e570dc4a94",
+      "asset": "0xf81f95cab34583b728bdc24732f2c91c44dca41b",
       "token0": "0x3a53442e32E6B4A4c8fb6989C6Ba38411034F5e3",
-      "token1": "0x5bE6929bEcf8056D98b51C116D78e7E570Dc4A94"
+      "token1": "0xf81F95Cab34583b728bdc24732f2c91c44dCa41b"
     },
     {
-      "address": "0xAD3618dC4BE9E06162e7bd479Af5ad546850c926",
+      "address": "0x403f9Ea758B7642f31eB9c34585e39AfdC62cB56",
       "label": "VOID / tLINK",
-      "asset": "0xd099bfb115eaeda79eb7a7ad5ea6e0c2788eea58",
+      "asset": "0x8ef9f15c44be109d9f06c843eca7ada78f6a7818",
       "token0": "0x3a53442e32E6B4A4c8fb6989C6Ba38411034F5e3",
-      "token1": "0xD099BFB115EAEDA79EB7a7Ad5Ea6E0c2788Eea58"
+      "token1": "0x8Ef9f15c44bE109d9f06c843ECA7aDa78f6a7818"
     }
   ],
-  "faucet": "0x67F277F13C5A6267C777e4E251cABdda86D9A366",
-  "faucetImplementation": "0x2ace379825360e9a654a2f6f0fcdaf8abdb0c3f9"
+  "faucet": "0xC46be6a49F29656A3baB0b2F1dA974eC55dD3770",
+  "faucetImplementation": "0x1a5ba6c437e05533c6e356cad056a8e4c2089e22"
 }
