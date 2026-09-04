@@ -105,8 +105,14 @@ async function sponsored(target: Address, data: Hex, spends: Array<{ token: Addr
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
   const request = { user: account.address, tokenId: CHAIN, target, data, maxToll: fee, maxGasVoid: GAS_VOID, callGasLimit: GAS_LIMIT, spends, nftSpends: [], nonce, deadline };
   const permissionMap = new Map<string, { token: Address; spender: Address; value: bigint }>();
-  permissionMap.set(`${voidToken}:${paymaster}`.toLowerCase(), { token: voidToken, spender: paymaster, value: fee + GAS_VOID });
-  for (const spend of spends) permissionMap.set(`${spend.token}:${runtime}`.toLowerCase(), { token: spend.token, spender: runtime, value: spend.amount });
+  // V10 VOID needs no permit: the frozen protocol operators can move only the
+  // request-scoped amount authorized by the SponsoredCall. External pool
+  // assets still provide their own permit when required.
+  for (const spend of spends) {
+    if (spend.token.toLowerCase() !== voidToken.toLowerCase()) {
+      permissionMap.set(`${spend.token}:${runtime}`.toLowerCase(), { token: spend.token, spender: runtime, value: spend.amount });
+    }
+  }
   const permits: Array<{ token: Address; spender: Address; value: bigint; deadline: bigint; v: number; r: Hex; s: Hex }> = [];
   const nextPermitNonce = new Map<string, bigint>();
   // Two permissions may be needed for VOID itself (Paymaster + Runtime). Both

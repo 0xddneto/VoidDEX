@@ -6,6 +6,7 @@
     "build:contracts": "tsx script/compile-contracts.ts",
     "deploy:testnet": "tsx script/deploy-chain1-dex-v4.ts",
     "deploy:test-faucet": "tsx script/deploy-test-faucet.ts",
+    "verify:testnet": "tsx script/verify-testnet.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
