@@ -5,4 +5,11 @@
 node_modules
 out
 cache
+forge-out
+*.tsbuildinfo
+AGENTS.md
+CLAUDE.md
 script/deployments/*-pending.json
+
+.vercel
+.env*

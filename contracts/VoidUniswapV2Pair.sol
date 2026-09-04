@@ -5,6 +5,7 @@ import {ChainAppBase, IVoidChainAppRuntime} from "./ChainAppBase.sol";
 
 interface IVoidUniswapToken {
     function transfer(address to, uint256 value) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
 }
 
 /// @title VoidUniswapV2Pair
@@ -49,6 +50,7 @@ contract VoidUniswapV2Pair is ChainAppBase {
     error InsufficientOutput();
     error Slippage();
     error TransferFailed();
+    error UnsupportedTransferFee(address token, uint256 expected, uint256 received);
     error AlreadyInitialised();
 
     modifier lock() {
@@ -108,22 +110,28 @@ contract VoidUniswapV2Pair is ChainAppBase {
         external onlyFromMyChain lock returns (uint256 liquidity)
     {
         if (amount0 == 0 || amount1 == 0) revert InvalidAmount();
+        uint256 before0 = _balance(token0, address(this));
+        uint256 before1 = _balance(token1, address(this));
         spend(token0, address(this), amount0);
         spend(token1, address(this), amount1);
+        uint256 received0 = _balance(token0, address(this)) - before0;
+        uint256 received1 = _balance(token1, address(this)) - before1;
+        if (received0 != amount0) revert UnsupportedTransferFee(token0, amount0, received0);
+        if (received1 != amount1) revert UnsupportedTransferFee(token1, amount1, received1);
 
         if (totalSupply == 0) {
-            liquidity = _sqrt(amount0 * amount1);
+            liquidity = _sqrt(received0 * received1);
             if (liquidity <= MINIMUM_LIQUIDITY) revert InsufficientLiquidity();
             _mint(address(0), MINIMUM_LIQUIDITY);
             liquidity -= MINIMUM_LIQUIDITY;
         } else {
-            liquidity = _min((amount0 * totalSupply) / reserve0, (amount1 * totalSupply) / reserve1);
+            liquidity = _min((received0 * totalSupply) / reserve0, (received1 * totalSupply) / reserve1);
             if (liquidity == 0) revert InsufficientLiquidity();
         }
         if (liquidity < minLiquidity) revert Slippage();
         _mint(caller(), liquidity);
-        _update(uint256(reserve0) + amount0, uint256(reserve1) + amount1);
-        emit Mint(caller(), amount0, amount1);
+        _update(_balance(token0, address(this)), _balance(token1, address(this)));
+        emit Mint(caller(), received0, received1);
     }
 
     /// @notice Burns caller LP tokens and returns the proportional pool assets.
@@ -136,11 +144,15 @@ contract VoidUniswapV2Pair is ChainAppBase {
         if (amount0 == 0 || amount1 == 0) revert InsufficientLiquidity();
         if (amount0 < min0 || amount1 < min1) revert Slippage();
         _burn(caller(), liquidity);
-        uint256 next0 = uint256(reserve0) - amount0;
-        uint256 next1 = uint256(reserve1) - amount1;
+        uint256 recipient0 = _balance(token0, caller());
+        uint256 recipient1 = _balance(token1, caller());
         _safeTransfer(token0, caller(), amount0);
         _safeTransfer(token1, caller(), amount1);
-        _update(next0, next1);
+        uint256 delivered0 = _balance(token0, caller()) - recipient0;
+        uint256 delivered1 = _balance(token1, caller()) - recipient1;
+        if (delivered0 != amount0) revert UnsupportedTransferFee(token0, amount0, delivered0);
+        if (delivered1 != amount1) revert UnsupportedTransferFee(token1, amount1, delivered1);
+        _update(_balance(token0, address(this)), _balance(token1, address(this)));
         emit Burn(caller(), amount0, amount1, caller());
     }
 
@@ -149,16 +161,22 @@ contract VoidUniswapV2Pair is ChainAppBase {
         external onlyFromMyChain lock returns (uint256 amountOut)
     {
         if (amountIn == 0 || reserve0 == 0 || reserve1 == 0) revert InsufficientLiquidity();
-        uint256 reserveOut = zeroForOne ? reserve1 : reserve0;
-        amountOut = quote(zeroForOne, amountIn);
-        if (amountOut == 0 || amountOut < minAmountOut || amountOut >= reserveOut) revert InsufficientOutput();
+        address tokenIn = zeroForOne ? token0 : token1;
+        address tokenOut = zeroForOne ? token1 : token0;
+        uint256 beforeIn = _balance(tokenIn, address(this));
+        spend(tokenIn, address(this), amountIn);
+        uint256 receivedIn = _balance(tokenIn, address(this)) - beforeIn;
+        if (receivedIn != amountIn) revert UnsupportedTransferFee(tokenIn, amountIn, receivedIn);
 
-        spend(zeroForOne ? token0 : token1, address(this), amountIn);
-        _safeTransfer(zeroForOne ? token1 : token0, caller(), amountOut);
-        uint256 next0 = zeroForOne ? uint256(reserve0) + amountIn : uint256(reserve0) - amountOut;
-        uint256 next1 = zeroForOne ? uint256(reserve1) - amountOut : uint256(reserve1) + amountIn;
-        _update(next0, next1);
-        emit Swap(caller(), zeroForOne ? amountIn : 0, zeroForOne ? 0 : amountIn, zeroForOne ? 0 : amountOut, zeroForOne ? amountOut : 0, caller());
+        uint256 reserveOut = zeroForOne ? reserve1 : reserve0;
+        amountOut = quote(zeroForOne, receivedIn);
+        if (amountOut == 0 || amountOut < minAmountOut || amountOut >= reserveOut) revert InsufficientOutput();
+        uint256 recipientBefore = _balance(tokenOut, caller());
+        _safeTransfer(tokenOut, caller(), amountOut);
+        uint256 delivered = _balance(tokenOut, caller()) - recipientBefore;
+        if (delivered != amountOut) revert UnsupportedTransferFee(tokenOut, amountOut, delivered);
+        _update(_balance(token0, address(this)), _balance(token1, address(this)));
+        _emitSwap(zeroForOne, receivedIn, amountOut);
     }
 
     function quote(bool zeroForOne, uint256 amountIn) public view returns (uint256) {
@@ -194,7 +212,23 @@ contract VoidUniswapV2Pair is ChainAppBase {
         if (executing != chainId) revert NotFromRuntime(executing, chainId);
         return caller();
     }
-    function _safeTransfer(address token, address to, uint256 value) private { if (!IVoidUniswapToken(token).transfer(to, value)) revert TransferFailed(); }
+    function _safeTransfer(address token, address to, uint256 value) private {
+        (bool ok, bytes memory result) = token.call(abi.encodeCall(IVoidUniswapToken.transfer, (to, value)));
+        if (!ok || (result.length != 0 && !abi.decode(result, (bool)))) revert TransferFailed();
+    }
+    function _balance(address token, address account) private view returns (uint256) {
+        return IVoidUniswapToken(token).balanceOf(account);
+    }
+    function _emitSwap(bool zeroForOne, uint256 amountIn, uint256 amountOut) private {
+        emit Swap(
+            caller(),
+            zeroForOne ? amountIn : 0,
+            zeroForOne ? 0 : amountIn,
+            zeroForOne ? 0 : amountOut,
+            zeroForOne ? amountOut : 0,
+            caller()
+        );
+    }
     function _min(uint256 a, uint256 b) private pure returns (uint256) { return a < b ? a : b; }
     function _sqrt(uint256 value) private pure returns (uint256 y) { if (value == 0) return 0; uint256 z = (value + 1) / 2; y = value; while (z < y) { y = z; z = (value / z + z) / 2; } }
 }

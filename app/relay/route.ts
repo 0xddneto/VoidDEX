@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createPublicClient, createWalletClient, encodeFunctionData, fallback, getAddress, http, isAddress, parseAbi, toFunctionSelector, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { DEX, MAX_GAS_VOID, CALL_GAS_LIMIT } from '../dex-config';
-import { RelayAdmissionError, relayClientId, reserveRelay } from '../relay-guard';
+import { RelayAdmissionError, relayClientId, reserveRelay, submitWithRelayerLock } from '../relay-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,7 +34,7 @@ const reject = (error: string, status = 400) => NextResponse.json({ error }, { s
 
 /** Relays only a signed, bounded Chain #1 DEX action. */
 export async function POST(request: Request) {
-  const key = process.env.PAYMASTER_RELAYER_PRIVATE_KEY;
+  const key = process.env.VOIDDEX_RELAYER_PRIVATE_KEY;
   if (!/^0x[0-9a-fA-F]{64}$/.test(key ?? '')) return reject('VOID relay is not configured.', 503);
   const contentLength = Number(request.headers.get('content-length') ?? '0');
   if (!Number.isFinite(contentLength) || contentLength > 65_536) return reject('Relay request is too large.', 413);
@@ -86,8 +86,9 @@ export async function POST(request: Request) {
 
   const sponsored = { user, tokenId, target, data, maxToll, maxGasVoid, callGasLimit, spends, nftSpends: [], nonce, deadline };
   let reservation: Awaited<ReturnType<typeof reserveRelay>>;
+  let broadcast = false;
   try {
-    reservation = await reserveRelay('voiddex', user, nonce, signature, relayClientId(request));
+    reservation = await reserveRelay('voiddex', PAYMASTER, user, nonce, signature, relayClientId(request));
   } catch (error) {
     if (error instanceof RelayAdmissionError) return reject(error.message, error.status);
     return reject('Relay admission control is unavailable.', 503);
@@ -100,11 +101,15 @@ export async function POST(request: Request) {
       await reservation.failed();
       return reject('The DEX action would fail. No transaction was sent.', 409);
     }
-    const hash = await wallet.sendTransaction({ account, chain: null, to: PAYMASTER, data: encodeFunctionData({ abi: paymasterAbi, functionName: 'sponsorWithAssetPermits', args: [sponsored, signature, permits] }) });
-    await reservation.submitted(hash);
-    return NextResponse.json({ hash });
+    const submission = await submitWithRelayerLock(account.address, 'voiddex', () => wallet.sendTransaction({ account, chain: null, to: PAYMASTER, data: encodeFunctionData({ abi: paymasterAbi, functionName: 'sponsorWithAssetPermits', args: [sponsored, signature, permits] }) }));
+    broadcast = true;
+    await reservation.submitted(submission.hash);
+    const receipt = await rpc.waitForTransactionReceipt({ hash: submission.hash, timeout: 45_000 });
+    await submission.confirmed(receipt.status === 'success');
+    if (receipt.status !== 'success') return reject('Sponsored transaction reverted.', 502);
+    return NextResponse.json({ hash: submission.hash });
   } catch {
-    await reservation.failed().catch(() => undefined);
+    if (!broadcast) await reservation.failed().catch(() => undefined);
     return reject('Relay refused the signed action. Sign a new request and try again.', 502);
   }
 }
