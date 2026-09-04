@@ -1,0 +1,33 @@
+{
+  "name": "voiddex",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:contracts": "tsx script/compile-contracts.ts",
+    "deploy:testnet": "tsx script/deploy-chain1-dex-v4.ts",
+    "deploy:test-faucet": "tsx script/deploy-test-faucet.ts",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "16.3.3",
+    "pg": "^8.23.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "viem": "^2.56.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
+    "solc": "0.8.28",
+    "tsx": "^4.23.13",
+    "typescript": "^5"
+  },
+  "overrides": {
+    "tmp": "0.2.7"
+  }
+}
