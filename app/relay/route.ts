@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createPublicClient, createWalletClient, encodeFunctionData, fallback, getAddress, http, isAddress, parseAbi, toFunctionSelector, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { BodyError, readJsonObject } from '../request-body';
+import { authenticSponsored } from '../verify-sponsored';
 import { DEX, MAX_GAS_VOID, CALL_GAS_LIMIT } from '../dex-config';
 import { RelayAdmissionError, relayClientId, reserveRelay, submitWithRelayerLock } from '../relay-guard';
 
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
   if (nonce !== chainNonce || maxToll !== fee) return reject('Quote changed; sign again.', 409);
 
   const sponsored = { user, tokenId, target, data, maxToll, maxGasVoid, callGasLimit, spends, nftSpends: [], nonce, deadline };
+  if (!await authenticSponsored(sponsored, signature, PAYMASTER)) return reject('Invalid action signature.', 401);
   let reservation: Awaited<ReturnType<typeof reserveRelay>>;
   let broadcast = false;
   let broadcastHash: Hex | null = null;
