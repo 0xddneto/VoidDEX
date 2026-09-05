@@ -11,7 +11,7 @@ own token authorization before the first transfer.
 ## What belongs here
 
 - the DEX web application and relay API;
-- pair/factory ChainApp contracts;
+- the single registered DEX gateway and its internal pair contracts;
 - DEX deployment and integration scripts;
 - the DEX deployment manifest.
 
@@ -34,6 +34,7 @@ Copy `.env.example` to `.env.local`, provide only testnet credentials, and run:
 ```bash
 npm ci
 npm run build:contracts
+npm run verify:testnet
 npm run build
 npm run dev
 ```

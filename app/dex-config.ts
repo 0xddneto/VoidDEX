@@ -1,5 +1,5 @@
 import { getAddress } from 'viem';
-import deployment from '../lib/deployment.json';
+import deployment from '../lib/deployment-v11-clean.json';
 
 // One deployment record is shared by VoidScan discovery and every DEX route.
 export const DEX = {
@@ -9,8 +9,7 @@ export const DEX = {
   voidToken: getAddress(deployment.baseToken),
   runtime: getAddress(deployment.runtime),
   paymaster: getAddress(deployment.paymaster),
-  factory: getAddress(deployment.factory),
-  faucet: getAddress(deployment.faucet),
+  app: getAddress(deployment.app),
   pools: deployment.pools.map((pool, index) => ({
     label: pool.label, address: getAddress(pool.address),
     token0: getAddress(pool.token0), token1: getAddress(pool.token1),

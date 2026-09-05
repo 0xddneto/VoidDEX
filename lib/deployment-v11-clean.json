@@ -1,0 +1,50 @@
+{
+  "version": "v11-definitive-chainapp-testnet",
+  "status": "ready",
+  "chainTokenId": 1,
+  "runtime": "0x46076bd0dddE6c6BfE459d24dc29B1a22Dae3Cdb",
+  "paymaster": "0x43b4A9c76CdA2AEd1bCd23e83EDdCc0DBE02b7d1",
+  "appFactory": "0x74F798B5224D639962855c7eBBB93d004f4d842A",
+  "baseToken": "0xEb8635cf3caE3b5C5371F21EBB924D054782d1BC",
+  "escrow": "0xa782093D3239d8D18504d4d4811AF9579106e5eb",
+  "steps": {
+    "deploy:tUsd": "0xdf106f961bbf19c38d5fae5cd761d218b5d4ece4e2f4c8871f87c93f39ff432f",
+    "deploy:tLink": "0x4fea8533cf86f35cb4fcde8c6993bcb33e66a9bac962318863675f66bf0f0edd",
+    "deploy:implementation": "0x7c8c934e9b9cea829aefef25f17121b54d88c7685f57668b4c2db3762ce51c71",
+    "publish:dex": "0xf3f1aca9b50ce18d7ca9a9c8d11d01f7ac00f488534b48aad42c2dd0d75c4a12",
+    "token:tUsd-minter": "0x98348283e4a71c4210713d222d0a318d794e52ab1e71ae0ea2ed39773df6abae",
+    "token:tLink-minter": "0xcd9743578f8fa2ca438e10781721ef31a777b4552c43cd32d2ad9aade8d40a8d",
+    "escrow:dex-bootstrap": "0x44382ffedcc019c7d8092b12a53a5e70f5f5ae78044d1e2df2707c66937d39f7",
+    "dex:claim-assets": "0xc226044652279283fbdbc07860edcaae0d4735a2af0d194b5900606200836208",
+    "dex:create:VOID / tUSD": "0x1f6fea56eae4cad36314ae95692ad416ed339e3844fd63da45ca6735400d7d0b",
+    "dex:seed:VOID / tUSD": "0xb083c247f2911cb8098f4350b2b731932390b19db6b3960363636d237ebc5734",
+    "dex:create:VOID / tLINK": "0x1f7079c79422e3906b6c80a2e1a6e82dfe791d2f648435fa7644037ae9126291",
+    "dex:seed:VOID / tLINK": "0x1785198923d55f9f1165319e2f02bf295df11f21fac4715f0b6c4bfba95839ac"
+  },
+  "assets": {
+    "tUsd": "0xC55f50Bbcf3071b12d8d3EAD9aD36035c6c7fEDf",
+    "tLink": "0x34f687B0BC79fC7Dd6Ad3E164b46f0Bda2BDaC47"
+  },
+  "implementation": "0x38c8d054eE6E525185AADC37A5Ea8501f1Bc7299",
+  "app": "0x21c3532C51F3869d6354de222086d485a35dA314",
+  "pools": [
+    {
+      "address": "0xfdF23908dbc50A1DF5B1B5ef502560489D9e89D1",
+      "label": "VOID / tUSD",
+      "asset": "0xC55f50Bbcf3071b12d8d3EAD9aD36035c6c7fEDf",
+      "token0": "0xC55f50Bbcf3071b12d8d3EAD9aD36035c6c7fEDf",
+      "token1": "0xEb8635cf3caE3b5C5371F21EBB924D054782d1BC"
+    },
+    {
+      "address": "0xD471B768DA2d6AaFb4A2507999C22493Ecb4b88e",
+      "label": "VOID / tLINK",
+      "asset": "0x34f687B0BC79fC7Dd6Ad3E164b46f0Bda2BDaC47",
+      "token0": "0x34f687B0BC79fC7Dd6Ad3E164b46f0Bda2BDaC47",
+      "token1": "0xEb8635cf3caE3b5C5371F21EBB924D054782d1BC"
+    }
+  ],
+  "excludedAccounts": [
+    "0xfdF23908dbc50A1DF5B1B5ef502560489D9e89D1",
+    "0xD471B768DA2d6AaFb4A2507999C22493Ecb4b88e"
+  ]
+}
