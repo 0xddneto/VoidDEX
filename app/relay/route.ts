@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient, createWalletClient, encodeFunctionData, fallback, getAddress, http, isAddress, parseAbi, toFunctionSelector, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { BodyError, readJsonObject } from '../request-body';
+import { authenticSponsored } from '../verify-sponsored';
 import { DEX, MAX_GAS_VOID, CALL_GAS_LIMIT } from '../dex-config';
 import { RelayAdmissionError, relayClientId, reserveRelay, submitWithRelayerLock } from '../relay-guard';
 
@@ -28,7 +30,7 @@ const MAX_DEADLINE_SECONDS = 630n;
 
 type Raw = Record<string, unknown>;
 const asAddress = (value: unknown): Address | null => typeof value === 'string' && isAddress(value) ? getAddress(value) : null;
-const asUint = (value: unknown): bigint | null => typeof value === 'string' && /^\d+$/.test(value) ? BigInt(value) : null;
+const asUint = (value: unknown): bigint | null => typeof value === 'string' && /^\d{1,78}$/.test(value) && BigInt(value) < (1n << 256n) ? BigInt(value) : null;
 const asHex = (value: unknown): Hex | null => typeof value === 'string' && /^0x[0-9a-fA-F]*$/.test(value) ? value as Hex : null;
 const reject = (error: string, status = 400) => NextResponse.json({ error }, { status });
 
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
   const contentLength = Number(request.headers.get('content-length') ?? '0');
   if (!Number.isFinite(contentLength) || contentLength > 65_536) return reject('Relay request is too large.', 413);
   let body: Raw;
-  try { body = await request.json() as Raw; } catch { return reject('Malformed relay request.'); }
+  try { body = await readJsonObject(request,65_536); } catch(error) { return reject(error instanceof BodyError ? error.message : 'Malformed request.', error instanceof BodyError ? error.status : 400); }
   const raw = body.request as Raw | undefined;
   const rawPermits = body.permits;
   const signature = asHex(body.signature);
@@ -85,8 +87,10 @@ export async function POST(request: Request) {
   if (nonce !== chainNonce || maxToll !== fee) return reject('Quote changed; sign again.', 409);
 
   const sponsored = { user, tokenId, target, data, maxToll, maxGasVoid, callGasLimit, spends, nftSpends: [], nonce, deadline };
+  if (!await authenticSponsored(sponsored, signature, PAYMASTER)) return reject('Invalid action signature.', 401);
   let reservation: Awaited<ReturnType<typeof reserveRelay>>;
   let broadcast = false;
+  let broadcastHash: Hex | null = null;
   try {
     reservation = await reserveRelay('voiddex', PAYMASTER, user, nonce, signature, relayClientId(request));
   } catch (error) {
@@ -103,12 +107,14 @@ export async function POST(request: Request) {
     }
     const submission = await submitWithRelayerLock(account.address, 'voiddex', () => wallet.sendTransaction({ account, chain: null, to: PAYMASTER, data: encodeFunctionData({ abi: paymasterAbi, functionName: 'sponsorWithAssetPermits', args: [sponsored, signature, permits] }) }));
     broadcast = true;
-    await reservation.submitted(submission.hash);
+    broadcastHash = submission.hash;
+    await reservation.submitted(submission.hash).catch(() => undefined);
     const receipt = await rpc.waitForTransactionReceipt({ hash: submission.hash, timeout: 45_000 });
     await submission.confirmed(receipt.status === 'success');
     if (receipt.status !== 'success') return reject('Sponsored transaction reverted.', 502);
     return NextResponse.json({ hash: submission.hash });
   } catch {
+    if (broadcastHash) return NextResponse.json({hash:broadcastHash,status:'submitted'},{status:202});
     if (!broadcast) await reservation.failed().catch(() => undefined);
     return reject('Relay refused the signed action. Sign a new request and try again.', 502);
   }

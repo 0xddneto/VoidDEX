@@ -44,15 +44,18 @@ export async function reserveRelay(surface: string, paymaster: Address, user: Ad
   try {
     await client.query('BEGIN');
     await client.query("DELETE FROM relay_requests WHERE created_at < now() - interval '7 days'");
+    await client.query("DELETE FROM relay_attempts WHERE created_at < now() - interval '10 minutes'");
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`relay-client:${clientHash.toString('hex')}`]);
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`relay-user:${paymaster.toLowerCase()}:${user.toLowerCase()}`]);
     const count = await client.query<{ requests: string }>(
-      `SELECT count(*) AS requests FROM relay_requests
+      `SELECT count(*) AS requests FROM relay_attempts
        WHERE created_at > now() - interval '1 minute' AND (user_address = $1 OR client_hash = $2)`,
       [userBytes, clientHash],
     );
     if (Number(count.rows[0].requests) >= REQUESTS_PER_MINUTE) {
       throw new RelayAdmissionError('Too many relay requests. Wait one minute and try again.', 429);
     }
+    await client.query('INSERT INTO relay_attempts(user_address,client_hash) VALUES($1,$2)', [userBytes, clientHash]);
     const claim = await client.query(
       `INSERT INTO relay_requests (surface,paymaster_address,user_address,user_nonce,client_hash,request_hash)
        VALUES ($1,$2,$3,$4,$5,$6)
@@ -63,7 +66,7 @@ export async function reserveRelay(surface: string, paymaster: Address, user: Ad
        WHERE relay_requests.expires_at < now() RETURNING user_nonce`,
       [surface, paymasterBytes, userBytes, nonce.toString(), clientHash, requestHash],
     );
-    if (claim.rowCount !== 1) throw new RelayAdmissionError('This signed nonce is already being relayed.', 409);
+    if (claim.rowCount !== 1) { await client.query('COMMIT'); throw new RelayAdmissionError('This signed nonce is already being relayed.', 409); }
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
