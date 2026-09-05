@@ -50,7 +50,7 @@ export default function VoidDex({initialStates}:{initialStates:DexPoolState[]}){
    const deadline=BigInt(Math.floor(Date.now()/1000)+600);
    const request={user:account,tokenId:1n,target,data,maxToll:currentFee,maxGasVoid:MAX_GAS_VOID,callGasLimit:CALL_GAS_LIMIT,spends,nftSpends:[],nonce,deadline};
    const limits=new Map<string,{token:Address;spender:Address;value:bigint}>();
-   // V10 VOID uses the Runtime/Paymaster's permanently frozen protocol path.
+   // V11 VOID uses the Runtime/Paymaster's permanently frozen protocol path.
    // Asking for a VOID permit here would recreate the extra wallet prompt the
    // token was specifically designed to remove. Third-party assets retain
    // their own permit/allowance rules.

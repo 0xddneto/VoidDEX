@@ -8,7 +8,7 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 
 const root = resolve(import.meta.dirname, '..');
-const configPath = resolve(root, 'lib/deployment.json');
+const configPath = resolve(root, process.env.VOID_DEX_CONFIG_FILE ?? 'lib/deployment.json');
 const config = JSON.parse(readFileSync(configPath, 'utf8'));
 if (config.faucet) throw Error(`Faucet already deployed: ${config.faucet}`);
 const key = process.env.DEPLOYER_PRIVATE_KEY;
