@@ -6,7 +6,7 @@
  * and gateway publication; swaps, pool creation and liquidity use VOID.
  */
 import 'dotenv/config';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -18,7 +18,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
-const rawDeployment = JSON.parse(readFileSync(resolve(root, process.env.VOID_DEPLOYMENT_FILE ?? '../VoidChainApp/script/deployments/testnet-v10-pending.json'), 'utf8'));
+const rawDeployment = JSON.parse(readFileSync(resolve(root, process.env.VOID_DEPLOYMENT_FILE ?? '../VoidChainApp/script/deployments/testnet-v11-final-pending.json'), 'utf8'));
 // A staged migration uses compact labels until acceptance. Normalize it here
 // so apps can be proven before the public manifest is switched.
 const deployment = rawDeployment.production ? rawDeployment : {
@@ -31,7 +31,7 @@ const deployment = rawDeployment.production ? rawDeployment : {
   },
   testnet: {
     VoidTestToken: rawDeployment.contracts.token,
-    VoidEthPoolV6: rawDeployment.contracts.pool,
+    VoidEthPoolV6: rawDeployment.contracts.ethPool,
   },
 };
 const out = resolve(root, 'out');
@@ -51,11 +51,42 @@ const paymaster = deployment.production.VoidPaymaster as Address;
 const appFactory = deployment.production.VoidChainAppFactoryV3 as Address;
 const voidToken = deployment.testnet.VoidTestToken as Address;
 const configPath = resolve(root, process.env.VOID_DEX_CONFIG_FILE ?? 'lib/deployment.json');
-const resumeDex = process.env.DEX_V4_FACTORY as Address | undefined;
-const resumeUsd = process.env.DEX_V4_TUSD as Address | undefined;
-const resumeLink = process.env.DEX_V4_TLINK as Address | undefined;
-const resumePoolUsd = process.env.DEX_V4_POOL_USD as Address | undefined;
-const resumePoolLink = process.env.DEX_V4_POOL_LINK as Address | undefined;
+type DexCheckpoint = {
+  version?: string;
+  chainTokenId?: number;
+  runtime?: Address;
+  paymaster?: Address;
+  appFactory?: Address;
+  factoryImplementation?: Address;
+  factory?: Address;
+  baseToken?: Address;
+  assets?: { tUsd?: Address; tLink?: Address };
+  pools?: Array<{ address: Address; label: string; asset: Address; token0?: Address; token1?: Address }>;
+  status?: string;
+};
+const checkpoint: DexCheckpoint = existsSync(configPath)
+  ? JSON.parse(readFileSync(configPath, 'utf8'))
+  : {};
+const checkpointPools = new Map((checkpoint.pools ?? []).map((pool) => [pool.label, pool.address]));
+const resumeDex = (process.env.DEX_V4_FACTORY ?? checkpoint.factory) as Address | undefined;
+const resumeImplementation = checkpoint.factoryImplementation;
+const resumeUsd = (process.env.DEX_V4_TUSD ?? checkpoint.assets?.tUsd) as Address | undefined;
+const resumeLink = (process.env.DEX_V4_TLINK ?? checkpoint.assets?.tLink) as Address | undefined;
+const resumePoolUsd = (process.env.DEX_V4_POOL_USD ?? checkpointPools.get('VOID / tUSD')) as Address | undefined;
+const resumePoolLink = (process.env.DEX_V4_POOL_LINK ?? checkpointPools.get('VOID / tLINK')) as Address | undefined;
+
+function saveCheckpoint(patch: Partial<DexCheckpoint>) {
+  Object.assign(checkpoint, {
+    version: deployment.version,
+    chainTokenId: 1,
+    runtime,
+    paymaster,
+    appFactory,
+    baseToken: voidToken,
+    ...patch,
+  });
+  writeFileSync(configPath, `${JSON.stringify(checkpoint, null, 2)}\n`);
+}
 
 function artifact(name: string, source = `${name}.sol`): { abi: Abi; bytecode: Hex } {
   const raw = JSON.parse(readFileSync(resolve(out, `${source}/${name}.json`), 'utf8'));
@@ -105,7 +136,7 @@ async function sponsored(target: Address, data: Hex, spends: Array<{ token: Addr
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
   const request = { user: account.address, tokenId: CHAIN, target, data, maxToll: fee, maxGasVoid: GAS_VOID, callGasLimit: GAS_LIMIT, spends, nftSpends: [], nonce, deadline };
   const permissionMap = new Map<string, { token: Address; spender: Address; value: bigint }>();
-  // V10 VOID needs no permit: the frozen protocol operators can move only the
+  // V11 VOID needs no permit: the frozen protocol operators can move only the
   // request-scoped amount authorized by the SponsoredCall. External pool
   // assets still provide their own permit when required.
   for (const spend of spends) {
@@ -167,26 +198,27 @@ if (!stats[0]) throw new Error('VOID Chain #1 is not active on V4.');
 console.log('\nVOIDDEX — V4 UNISWAP V2 TESTNET DEPLOYMENT\n');
 const liquidity = parseEther('10000');
 const supply = parseEther('5000000');
-let tUsd: Address;
-let tLink: Address;
-let dex: Address;
-let poolUsd: Address;
-let poolLink: Address;
-if (resumeDex && resumeUsd && resumeLink) {
-  console.log('[1/5] Resuming published V4 pools');
-  tUsd = resumeUsd; tLink = resumeLink; dex = resumeDex;
-  const names = new Map([[voidToken.toLowerCase(), 'VOID'], [tUsd.toLowerCase(), 'Void Test Dollar'], [tLink.toLowerCase(), 'Void Test Link']]);
-  for (const asset of [tUsd, tLink]) {
-    const existing = await query(dex, factoryArt.abi, 'poolFor', [voidToken, asset]) as Address;
-    if (/^0x0{40}$/i.test(existing)) await sponsored(dex, encodeFunctionData({ abi: factoryArt.abi, functionName: 'createPool', args: [voidToken, asset] }), [], names);
-  }
-  poolUsd = await query(dex, factoryArt.abi, 'poolFor', [voidToken, tUsd]) as Address;
-  poolLink = await query(dex, factoryArt.abi, 'poolFor', [voidToken, tLink]) as Address;
-} else {
-  console.log('[1/5] Deploying test assets and DEX implementation');
+let tUsd = resumeUsd;
+let tLink = resumeLink;
+let dex = resumeDex;
+let implementation = resumeImplementation;
+let poolUsd = resumePoolUsd;
+let poolLink = resumePoolLink;
+
+console.log('[1/5] Deploying or resuming test assets and DEX implementation');
+if (!tUsd) {
   tUsd = await deploy('tUSD', tokenArt, ['Void Test Dollar', 'tUSD', supply]);
+  saveCheckpoint({ assets: { ...checkpoint.assets, tUsd } });
+}
+if (!tLink) {
   tLink = await deploy('tLINK', tokenArt, ['Void Test Link', 'tLINK', supply]);
-  const implementation = await deploy('DEX implementation', factoryArt, [runtime, CHAIN, appFactory]);
+  saveCheckpoint({ assets: { ...checkpoint.assets, tUsd, tLink } });
+}
+if (!implementation) {
+  implementation = await deploy('DEX implementation', factoryArt, [runtime, CHAIN, appFactory]);
+  saveCheckpoint({ assets: { tUsd, tLink }, factoryImplementation: implementation });
+}
+if (!dex) {
   console.log('[2/5] Publishing the DEX factory through V4');
   const publishHash = await wallet.writeContract({ account, chain: null, address: appFactory, abi: appFactoryAbi, functionName: 'publish', args: [CHAIN, implementation, '0x', `0x${Date.now().toString(16).padStart(64, '0')}`], maxFeePerGas: await gas(), maxPriorityFeePerGas: 0n } as never);
   const published = await wait(publishHash);
@@ -195,8 +227,12 @@ if (resumeDex && resumeUsd && resumeLink) {
   const event = decodeEventLog({ abi: appFactoryAbi, data: log.data, topics: log.topics });
   if (event.eventName !== 'AppPublished') throw new Error('Unexpected app factory event.');
   dex = (event.args as unknown as { app: Address }).app;
-  console.log('[3/5] Funding the liquidity provider and creating pools through VOID');
-  if (/^v(?:[6789]|10)/.test(deployment.version)) {
+  saveCheckpoint({ assets: { tUsd, tLink }, factoryImplementation: implementation, factory: dex, status: 'factory-published' });
+}
+
+console.log('[3/5] Funding the liquidity provider and creating pools through VOID');
+if (!poolUsd || !poolLink) {
+  if (/^v(?:[6789]|10|11)/.test(deployment.version)) {
     const balance = await rpc.readContract({ address: voidToken, abi: tokenAbi, functionName: 'balanceOf', args: [account.address] });
     if (balance < liquidity * 2n + GAS_VOID * 4n) {
       // V6 VOID is fixed supply. Acquire test liquidity through its real pool;
@@ -216,13 +252,26 @@ if (resumeDex && resumeUsd && resumeLink) {
     throw new Error('This liquidity deployment now requires the fixed-supply V6 stack.');
   }
   const namesForCreation = new Map<string, string>([[voidToken.toLowerCase(), 'VOID'], [tUsd.toLowerCase(), 'Void Test Dollar'], [tLink.toLowerCase(), 'Void Test Link']]);
-  for (const asset of [tUsd, tLink]) {
-    await sponsored(dex, encodeFunctionData({ abi: factoryArt.abi, functionName: 'createPool', args: [voidToken, asset] }), [], namesForCreation);
+  for (const [asset, label] of [[tUsd, 'VOID / tUSD'], [tLink, 'VOID / tLINK']] as const) {
+    const existing = await query(dex, factoryArt.abi, 'poolFor', [voidToken, asset]) as Address;
+    if (/^0x0{40}$/i.test(existing)) {
+      await sponsored(dex, encodeFunctionData({ abi: factoryArt.abi, functionName: 'createPool', args: [voidToken, asset] }), [], namesForCreation);
+    }
+    const address = await query(dex, factoryArt.abi, 'poolFor', [voidToken, asset]) as Address;
+    if (/^0x0{40}$/i.test(address)) throw new Error(`Factory did not publish ${label}.`);
+    if (label === 'VOID / tUSD') poolUsd = address;
+    else poolLink = address;
+    saveCheckpoint({
+      assets: { tUsd, tLink }, factoryImplementation: implementation, factory: dex,
+      pools: [
+        ...(poolUsd ? [{ address: poolUsd, label: 'VOID / tUSD', asset: tUsd }] : []),
+        ...(poolLink ? [{ address: poolLink, label: 'VOID / tLINK', asset: tLink }] : []),
+      ],
+      status: 'pools-published',
+    });
   }
-  poolUsd = await query(dex, factoryArt.abi, 'poolFor', [voidToken, tUsd]) as Address;
-  poolLink = await query(dex, factoryArt.abi, 'poolFor', [voidToken, tLink]) as Address;
-  if (/^0x0{40}$/i.test(poolUsd) || /^0x0{40}$/i.test(poolLink)) throw new Error('Factory did not publish pools.');
 }
+if (!poolUsd || !poolLink || /^0x0{40}$/i.test(poolUsd) || /^0x0{40}$/i.test(poolLink)) throw new Error('Factory did not publish pools.');
 const names = new Map<string, string>([[voidToken.toLowerCase(), 'VOID'], [tUsd.toLowerCase(), 'Void Test Dollar'], [tLink.toLowerCase(), 'Void Test Link']]);
 
 console.log('[4/5] Seeding liquidity through signed VOID requests');
@@ -239,6 +288,9 @@ console.log('[5/5] Writing VoidDEX configuration');
 const pools = await Promise.all([
   [poolUsd, 'VOID / tUSD', tUsd], [poolLink, 'VOID / tLINK', tLink],
 ].map(async ([address, label, asset]) => ({ address, label, asset, token0: await query(address as Address, pairArt.abi, 'token0') as Address, token1: await query(address as Address, pairArt.abi, 'token1') as Address })));
-writeFileSync(configPath, `${JSON.stringify({ version: deployment.version, chainTokenId: 1, runtime, paymaster, appFactory, factory: dex, baseToken: voidToken, pools }, null, 2)}\n`);
+saveCheckpoint({
+  assets: { tUsd, tLink }, factoryImplementation: implementation, factory: dex,
+  pools, status: 'ready',
+});
 console.log(`✓ V4 DEX factory: ${dex}`);
 console.log(`✓ pools: ${poolUsd}, ${poolLink}`);

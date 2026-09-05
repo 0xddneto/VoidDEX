@@ -5,7 +5,7 @@ uses a Uniswap V2-style constant-product AMM, but every registered state change
 enters through the VoidChain Runtime and is sponsored by the VOID Paymaster.
 The wallet signs the exact action; the relayer pays the parent-chain ETH gas,
 and the Paymaster charges the bounded execution cost in VOID. VOID itself needs
-no approval transaction on V10. External pool assets can still require their
+no approval transaction on V11. External pool assets can still require their
 own token authorization before the first transfer.
 
 ## What belongs here

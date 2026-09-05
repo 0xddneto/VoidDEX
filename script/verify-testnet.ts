@@ -1,10 +1,11 @@
 /** Verify every VoidDEX implementation while treating gateways as inspected proxies. */
 import { readFileSync } from 'node:fs';
-import { encodeAbiParameters, getAddress, parseAbiParameters, type Address } from 'viem';
+import { createPublicClient, encodeAbiParameters, getAddress, http, parseAbi, parseAbiParameters, type Address } from 'viem';
 
 const explorer = 'https://explorer.testnet.chain.robinhood.com';
 const input = readFileSync('out/standard-input.json', 'utf8');
-const deployment = JSON.parse(readFileSync('lib/deployment.json', 'utf8'));
+const deployment = JSON.parse(readFileSync(process.env.VOID_DEX_CONFIG_FILE ?? 'lib/deployment.json', 'utf8'));
+const rpc = createPublicClient({ transport: http(process.env.PARENT_RPC ?? 'https://robinhood-testnet.drpc.org') });
 const e18 = 10n ** 18n;
 
 type Target = { label: string; address: Address; contract: string; args: `0x${string}` };
@@ -20,8 +21,10 @@ async function addressRecord(address: Address) {
 const gatewayImplementations = new Map<string, Address>();
 for (const gateway of [deployment.factory, ...deployment.pools.map((pool: { address: Address }) => pool.address), deployment.faucet] as Address[]) {
   const record = await addressRecord(gateway);
-  const implementation = record.implementations?.[0]?.address_hash;
-  if (!implementation) throw new Error(`Gateway ${gateway} is not linked to an implementation by the explorer.`);
+  const implementation = record.implementations?.[0]?.address_hash ?? await rpc.readContract({
+    address: gateway, abi: parseAbi(['function implementation() view returns(address)']), functionName: 'implementation',
+  });
+  if (!implementation) throw new Error(`Gateway ${gateway} does not expose its implementation.`);
   gatewayImplementations.set(gateway.toLowerCase(), getAddress(implementation));
 }
 
