@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { createPublicClient, encodeAbiParameters, http, parseAbiParameters } from 'viem';
 
-const deployment = JSON.parse(readFileSync('lib/deployment-v11-clean.json', 'utf8'));
+const deployment = JSON.parse(readFileSync('lib/deployment-v11-hardened.json', 'utf8'));
 const exactInput = JSON.parse(readFileSync('out/standard-input.json', 'utf8'));
 const explorer = 'https://explorer.testnet.chain.robinhood.com';
 const rpc = createPublicClient({ transport: http('https://robinhood-testnet.drpc.org') });

@@ -1,5 +1,5 @@
 import { getAddress } from 'viem';
-import deployment from '../lib/deployment-v11-clean.json';
+import deployment from '../lib/deployment-v11-hardened.json';
 
 // One deployment record is shared by VoidScan discovery and every DEX route.
 export const DEX = {
