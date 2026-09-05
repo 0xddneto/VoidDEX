@@ -4,7 +4,8 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { BodyError, readJsonObject } from '../request-body';
 import { authenticSponsored } from '../verify-sponsored';
 import { DEX, MAX_GAS_VOID, CALL_GAS_LIMIT } from '../dex-config';
-import { RelayAdmissionError, relayClientId, reserveRelay, submitWithRelayerLock } from '../relay-guard';
+import { RelayAdmissionError, relayClientId, reserveRelay, admitRelayIngress } from '../relay-guard';
+import { submitDurably } from '../durable-relay';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
 
   const spends: Array<{ token: Address; amount: bigint }> = [];
   for (const item of spendsRaw) {
+    if (!item || typeof item !== 'object' || spends.length >= 2) return reject('Invalid app budget.');
     const spend = item as Raw; const token = asAddress(spend.token); const amount = asUint(spend.amount);
     if (!token || amount === null || amount === 0n || spends.some((known) => known.token === token)) return reject('Invalid app budget.');
     spends.push({ token, amount });
@@ -68,8 +70,9 @@ export async function POST(request: Request) {
 
   const permits = [] as Array<{ token: Address; spender: Address; value: bigint; deadline: bigint; v: number; r: Hex; s: Hex }>;
   for (const item of rawPermits) {
+    if (!item || typeof item !== 'object') return reject('Invalid token permit.');
     const permit = item as Raw; const token = asAddress(permit.token); const spender = asAddress(permit.spender); const value = asUint(permit.value); const permitDeadline = asUint(permit.deadline); const r = asHex(permit.r); const s = asHex(permit.s); const v = permit.v;
-    if (!token || !spender || value === null || permitDeadline !== deadline || !r || !s || typeof v !== 'number' || (v !== 27 && v !== 28)) return reject('Invalid token permit.');
+    if (!token || !spender || value === null || permitDeadline !== deadline || !r || r.length !== 66 || !s || s.length !== 66 || typeof v !== 'number' || (v !== 27 && v !== 28)) return reject('Invalid token permit.');
     if (permits.some((known) => known.token === token && known.spender === spender)) return reject('Duplicate token permit.');
     permits.push({ token, spender, value, deadline: permitDeadline, v, r: r as Hex, s: s as Hex });
   }
@@ -80,14 +83,16 @@ export async function POST(request: Request) {
     return needed === undefined || permit.value < needed;
   })) return reject('Permit does not cover a required VOID or app budget.');
 
+  const sponsored = { user, tokenId, target, data, maxToll, maxGasVoid, callGasLimit, spends, nftSpends: [], nonce, deadline };
+  try { await admitRelayIngress(relayClientId(request)); }
+  catch (error) { return reject(error instanceof Error ? error.message : 'Relay unavailable.', error instanceof RelayAdmissionError ? error.status : 503); }
+  if (!await authenticSponsored(sponsored, signature, PAYMASTER)) return reject('Invalid action signature.', 401);
   const [chainNonce, fee] = await Promise.all([
     rpc.readContract({ address: PAYMASTER, abi: readAbi, functionName: 'nonces', args: [user] }),
     rpc.readContract({ address: RUNTIME, abi: readAbi, functionName: 'feeOf', args: [1n] }),
   ]);
   if (nonce !== chainNonce || maxToll !== fee) return reject('Quote changed; sign again.', 409);
 
-  const sponsored = { user, tokenId, target, data, maxToll, maxGasVoid, callGasLimit, spends, nftSpends: [], nonce, deadline };
-  if (!await authenticSponsored(sponsored, signature, PAYMASTER)) return reject('Invalid action signature.', 401);
   let reservation: Awaited<ReturnType<typeof reserveRelay>>;
   let broadcast = false;
   let broadcastHash: Hex | null = null;
@@ -105,7 +110,14 @@ export async function POST(request: Request) {
       await reservation.failed();
       return reject('The DEX action would fail. No transaction was sent.', 409);
     }
-    const submission = await submitWithRelayerLock(account.address, 'voiddex', () => wallet.sendTransaction({ account, chain: null, to: PAYMASTER, data: encodeFunctionData({ abi: paymasterAbi, functionName: 'sponsorWithAssetPermits', args: [sponsored, signature, permits] }) }));
+    const submission = await submitDurably(account.address, 'voiddex', {
+      nonce: (blockTag) => rpc.getTransactionCount({ address: account.address, blockTag }),
+      prepare: async (nonce) => wallet.signTransaction({ ...await wallet.prepareTransactionRequest({
+        account, chain: null, nonce, to: PAYMASTER,
+        data: encodeFunctionData({ abi: paymasterAbi, functionName: 'sponsorWithAssetPermits', args: [sponsored, signature, permits] }),
+      }), account, chain: null }),
+      broadcast: (serializedTransaction) => rpc.sendRawTransaction({ serializedTransaction }),
+    });
     broadcast = true;
     broadcastHash = submission.hash;
     await reservation.submitted(submission.hash).catch(() => undefined);
