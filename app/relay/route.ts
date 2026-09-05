@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createPublicClient, createWalletClient, encodeFunctionData, fallback, getAddress, http, isAddress, parseAbi, toFunctionSelector, type Address, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, decodeFunctionData, encodeFunctionData, fallback, getAddress, http, isAddress, parseAbi, toFunctionSelector, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { BodyError, readJsonObject } from '../request-body';
 import { authenticSponsored } from '../verify-sponsored';
@@ -13,16 +13,20 @@ export const dynamic = 'force-dynamic';
 const RUNTIME = DEX.runtime;
 const PAYMASTER = DEX.paymaster;
 const VOID = DEX.voidToken;
-const PAIRS = new Set(DEX.pools.map(pool => pool.address.toLowerCase()));
-const FAUCET = DEX.faucet.toLowerCase();
-const pairAbi = parseAbi(['function swap(bool,uint256,uint256)', 'function addLiquidity(uint256,uint256,uint256)', 'function removeLiquidity(uint256,uint256,uint256)']);
-const faucetAbi = parseAbi(['function claim()']);
+const DEX_APP = DEX.app.toLowerCase();
 const selectors = new Set([
-  toFunctionSelector('swap(bool,uint256,uint256)'),
-  toFunctionSelector('addLiquidity(uint256,uint256,uint256)'),
-  toFunctionSelector('removeLiquidity(uint256,uint256,uint256)'),
+  toFunctionSelector('swap(address,bool,uint256,uint256)'),
+  toFunctionSelector('addLiquidity(address,uint256,uint256,uint256)'),
+  toFunctionSelector('removeLiquidity(address,uint256,uint256,uint256)'),
+  toFunctionSelector('claimTestAssets(uint256)'),
 ]);
-const faucetSelector = toFunctionSelector('claim()');
+const dexAbi = parseAbi([
+  'function swap(address pool,bool zeroForOne,uint256 amountIn,uint256 minAmountOut) returns(uint256)',
+  'function addLiquidity(address pool,uint256 amount0,uint256 amount1,uint256 minLiquidity) returns(uint256)',
+  'function removeLiquidity(address pool,uint256 liquidity,uint256 min0,uint256 min1) returns(uint256,uint256)',
+  'function claimTestAssets(uint256 amountPerAsset)',
+]);
+const configuredPools = new Map(DEX.pools.map((pool) => [pool.address.toLowerCase(), pool]));
 const readAbi = parseAbi(['function nonces(address) view returns(uint256)', 'function feeOf(uint256) view returns(uint256)']);
 const paymasterAbi = parseAbi(['function sponsorWithAssetPermits((address user,uint256 tokenId,address target,bytes data,uint256 maxToll,uint256 maxGasVoid,uint256 callGasLimit,(address token,uint256 amount)[] spends,(address collection,uint256 tokenId)[] nftSpends,uint256 nonce,uint256 deadline),bytes,(address token,address spender,uint256 value,uint256 deadline,uint8 v,bytes32 r,bytes32 s)[]) returns(bool,bytes)']);
 const transport = fallback(DEX.rpcUrls.map((url) => http(url)));
@@ -56,8 +60,7 @@ export async function POST(request: Request) {
   const now = BigInt(Math.floor(Date.now() / 1000));
   if (deadline <= now || deadline > now + MAX_DEADLINE_SECONDS) return reject('Signature expired.');
   const selector = data.slice(0, 10) as Hex;
-  const isPair = PAIRS.has(target.toLowerCase());
-  if (!((isPair && selectors.has(selector)) || (target.toLowerCase() === FAUCET && selector === faucetSelector))) return reject('Only registered DEX methods can be relayed.');
+  if (target.toLowerCase() !== DEX_APP || !selectors.has(selector)) return reject('Only registered DEX methods can be relayed.');
 
   const spends: Array<{ token: Address; amount: bigint }> = [];
   for (const item of spendsRaw) {
@@ -67,6 +70,40 @@ export async function POST(request: Request) {
     spends.push({ token, amount });
   }
   if (spends.length > 2) return reject('Too many app token budgets.');
+
+  // Calldata and token budgets must describe the same exact action. The
+  // Runtime enforces the signed ceilings on-chain; this ingress check also
+  // refuses malformed requests before the relayer spends ETH on them.
+  try {
+    const decoded = decodeFunctionData({ abi: dexAbi, data });
+    if (decoded.functionName === 'swap') {
+      const [poolAddress, zeroForOne, amountIn] = decoded.args;
+      const pool = configuredPools.get(poolAddress.toLowerCase());
+      if (!pool) return reject('Unknown DEX pool.');
+      const inputToken = zeroForOne ? pool.token0 : pool.token1;
+      if (spends.length !== 1 || spends[0]!.token.toLowerCase() !== inputToken.toLowerCase() || spends[0]!.amount !== amountIn) {
+        return reject('Swap budget does not match the signed action.');
+      }
+    } else if (decoded.functionName === 'addLiquidity') {
+      const [poolAddress, amount0, amount1] = decoded.args;
+      const pool = configuredPools.get(poolAddress.toLowerCase());
+      if (!pool) return reject('Unknown DEX pool.');
+      const expected = new Map([[pool.token0.toLowerCase(), amount0], [pool.token1.toLowerCase(), amount1]]);
+      if (spends.length !== 2 || spends.some((spend) => expected.get(spend.token.toLowerCase()) !== spend.amount)) {
+        return reject('Liquidity budget does not match the signed action.');
+      }
+    } else if (decoded.functionName === 'removeLiquidity') {
+      const [poolAddress] = decoded.args;
+      if (!configuredPools.has(poolAddress.toLowerCase()) || spends.length !== 0) return reject('Invalid liquidity removal budget.');
+    } else if (decoded.functionName === 'claimTestAssets') {
+      const [amount] = decoded.args;
+      if (amount !== 1_000n * 10n ** 18n || spends.length !== 0) return reject('Invalid test-token claim.');
+    } else {
+      return reject('Unsupported DEX action.');
+    }
+  } catch {
+    return reject('Malformed DEX action.');
+  }
 
   const permits = [] as Array<{ token: Address; spender: Address; value: bigint; deadline: bigint; v: number; r: Hex; s: Hex }>;
   for (const item of rawPermits) {

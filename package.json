@@ -4,9 +4,8 @@
   "type": "module",
   "scripts": {
     "build:contracts": "tsx script/compile-contracts.ts",
-    "deploy:testnet": "tsx script/deploy-chain1-dex-v4.ts",
-    "deploy:test-faucet": "tsx script/deploy-test-faucet.ts",
-    "verify:testnet": "tsx script/verify-testnet.ts",
+    "deploy:testnet": "tsx script/deploy-chain1-dex-v11.ts",
+    "verify:testnet": "tsx script/verify-testnet-v11.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start"
