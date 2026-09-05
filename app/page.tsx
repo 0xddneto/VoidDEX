@@ -2,7 +2,12 @@ import VoidDex from './DexClient';
 import { DEX } from './dex-config';
 import { poolState } from './pool-state';
 
+// Pool reserves and the VOID fee are live parent-chain state. Never freeze
+// the initial quote into a static build artifact; a transient RPC read during
+// deployment must not ship a disabled swap screen.
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function Page() {
   try {
     const states = await Promise.all(DEX.pools.map((_, index) => poolState(index)));
