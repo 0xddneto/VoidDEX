@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createPublicClient, createWalletClient, decodeFunctionData, encodeFunctionData, fallback, getAddress, http, isAddress, parseAbi, toFunctionSelector, type Address, type Hex } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { BodyError, readJsonObject } from '../request-body';
 import { authenticSponsored } from '../verify-sponsored';
 import { DEX, MAX_GAS_VOID, CALL_GAS_LIMIT } from '../dex-config';
 import { RelayAdmissionError, relayClientId, reserveRelay, admitRelayIngress } from '../relay-guard';
 import { submitDurably } from '../durable-relay';
+import { relayerPoolConfigured, selectRelayer } from '../relayer-pool';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -41,8 +41,7 @@ const reject = (error: string, status = 400) => NextResponse.json({ error }, { s
 
 /** Relays only a signed, bounded Chain #1 DEX action. */
 export async function POST(request: Request) {
-  const key = process.env.VOIDDEX_RELAYER_PRIVATE_KEY;
-  if (!/^0x[0-9a-fA-F]{64}$/.test(key ?? '')) return reject('VOID relay is not configured.', 503);
+  if (!relayerPoolConfigured()) return reject('VOID relay is not configured.', 503);
   const contentLength = Number(request.headers.get('content-length') ?? '0');
   if (!Number.isFinite(contentLength) || contentLength > 65_536) return reject('Relay request is too large.', 413);
   let body: Raw;
@@ -140,7 +139,7 @@ export async function POST(request: Request) {
     return reject('Relay admission control is unavailable.', 503);
   }
   try {
-    const account = privateKeyToAccount(key as Hex);
+    const account = await selectRelayer(rpc, `${user}:${nonce}:dex`);
     const wallet = createWalletClient({ account, transport });
     const simulation = await rpc.simulateContract({ account, address: PAYMASTER, abi: paymasterAbi, functionName: 'sponsorWithAssetPermits', args: [sponsored, signature, permits] });
     if (!simulation.result[0]) {
