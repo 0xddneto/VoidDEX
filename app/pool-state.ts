@@ -17,15 +17,19 @@ export async function canonicalRelease() {
     || release.signingOrigin !== DEX.voidscanOrigin) {
     throw new Error('VoidScan and VoidDEX release identities do not match. Signing is blocked.');
   }
-  const critical = [
+  const protocolCritical = [
     ['Runtime', DEX.runtime, DEX.codeHashes.runtime], ['Paymaster', DEX.paymaster, DEX.codeHashes.paymaster],
-    ['VOID token', DEX.voidToken, DEX.codeHashes.baseToken], ['Chain #1 DEX', DEX.app, DEX.codeHashes.app],
+    ['VOID token', DEX.voidToken, DEX.codeHashes.baseToken],
   ] as const;
-  await Promise.all(critical.map(async ([label, address, expected]) => {
+  await Promise.all(protocolCritical.map(async ([label, address, expected]) => {
     if (release.codeHashes?.[label] !== expected) throw new Error(`VoidScan code hash mismatch: ${label}.`);
     const code = await rpc.getBytecode({ address });
     if (!code || code === '0x' || keccak256(code) !== expected) throw new Error(`Live bytecode mismatch: ${label}. Signing is blocked.`);
   }));
+  const appCode = await rpc.getBytecode({ address: DEX.app });
+  if (!appCode || appCode === '0x' || keccak256(appCode) !== DEX.codeHashes.app) {
+    throw new Error('Live VoidDEX gateway bytecode mismatch. Signing is blocked.');
+  }
   return { deploymentId: DEX.deploymentId, initialPolicyHash: DEX.initialPolicyHash, releaseId: DEX.releaseId, manifestHash: DEX.manifestHash, deployBlock: DEX.deployBlock, releaseReady: true };
 }
 

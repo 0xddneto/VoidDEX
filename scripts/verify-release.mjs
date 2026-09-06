@@ -6,7 +6,7 @@ if (deployment.version !== 'v11-definitive-chainapp-testnet'
   || deployment.chainId !== 46630
   || deployment.deployBlock !== 113707579
   || deployment.deploymentId !== `${deployment.chainId}:${deployment.deployBlock}`
-  || deployment.manifestHash !== '0x3ffc69e1e10352903ff4d43c3a5387d7c4a5dce5fc72dc891d063772f816098e'
+  || deployment.manifestHash !== '0x5dd0790cb29c0661e3f748920a1e6a5cf47ba4ca63fd4610da2c846da651f46d'
   || deployment.releaseId !== `${deployment.chainId}:${deployment.deployBlock}:${deployment.manifestHash}`
   || deployment.initialPolicyHash !== '0x01b046d3334adb6ad849128fc3d7825135a4a604fd8cd3e183b853956fba5971'
   || deployment.signingOrigin !== 'https://www.voidchains.app') {

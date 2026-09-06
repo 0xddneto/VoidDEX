@@ -3,9 +3,9 @@
   "chainId": 46630,
   "deployBlock": 113707579,
   "deploymentId": "46630:113707579",
-  "manifestHash": "0x3ffc69e1e10352903ff4d43c3a5387d7c4a5dce5fc72dc891d063772f816098e",
+  "manifestHash": "0x5dd0790cb29c0661e3f748920a1e6a5cf47ba4ca63fd4610da2c846da651f46d",
   "initialPolicyHash": "0x01b046d3334adb6ad849128fc3d7825135a4a604fd8cd3e183b853956fba5971",
-  "releaseId": "46630:113707579:0x3ffc69e1e10352903ff4d43c3a5387d7c4a5dce5fc72dc891d063772f816098e",
+  "releaseId": "46630:113707579:0x5dd0790cb29c0661e3f748920a1e6a5cf47ba4ca63fd4610da2c846da651f46d",
   "signingOrigin": "https://www.voidchains.app",
   "criticalCodeHashes": {
     "runtime": "0x6888f695d8cbb117ced09f98710694ad63da27acc4e18cda53a5e79db64544cd",
