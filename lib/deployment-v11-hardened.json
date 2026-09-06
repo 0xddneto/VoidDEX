@@ -1,5 +1,10 @@
 {
   "version": "v11-definitive-chainapp-testnet",
+  "chainId": 46630,
+  "deployBlock": 113707579,
+  "manifestHash": "0x3ffc69e1e10352903ff4d43c3a5387d7c4a5dce5fc72dc891d063772f816098e",
+  "releaseId": "46630:113707579:0x3ffc69e1e10352903ff4d43c3a5387d7c4a5dce5fc72dc891d063772f816098e",
+  "signingOrigin": "https://voidscan-nu.vercel.app",
   "status": "ready",
   "chainTokenId": 1,
   "runtime": "0xFB3b44d5fFDf52859Efdb2B3EB2Ca0C2eCe17F3E",
