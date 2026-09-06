@@ -9,7 +9,7 @@ if (deployment.version !== 'v11-definitive-chainapp-testnet'
   || deployment.manifestHash !== '0x3ffc69e1e10352903ff4d43c3a5387d7c4a5dce5fc72dc891d063772f816098e'
   || deployment.releaseId !== `${deployment.chainId}:${deployment.deployBlock}:${deployment.manifestHash}`
   || deployment.initialPolicyHash !== '0x01b046d3334adb6ad849128fc3d7825135a4a604fd8cd3e183b853956fba5971'
-  || deployment.signingOrigin !== 'https://voidscan-nu.vercel.app') {
+  || deployment.signingOrigin !== 'https://www.voidchains.app') {
   throw new Error('VoidDEX is not locked to the accepted VoidScan release.');
 }
 if (!proxy.includes("const CANONICAL_HOST = 'voiddex-alpha.vercel.app'")) throw new Error('VoidDEX signing host is not canonical.');

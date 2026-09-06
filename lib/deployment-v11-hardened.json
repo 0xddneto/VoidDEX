@@ -6,7 +6,7 @@
   "manifestHash": "0x3ffc69e1e10352903ff4d43c3a5387d7c4a5dce5fc72dc891d063772f816098e",
   "initialPolicyHash": "0x01b046d3334adb6ad849128fc3d7825135a4a604fd8cd3e183b853956fba5971",
   "releaseId": "46630:113707579:0x3ffc69e1e10352903ff4d43c3a5387d7c4a5dce5fc72dc891d063772f816098e",
-  "signingOrigin": "https://voidscan-nu.vercel.app",
+  "signingOrigin": "https://www.voidchains.app",
   "criticalCodeHashes": {
     "runtime": "0x6888f695d8cbb117ced09f98710694ad63da27acc4e18cda53a5e79db64544cd",
     "paymaster": "0x869ff11a7d843dd42c16c4fa203c6424d655ed4c94349d7b2394bcf1ad1522c6",
