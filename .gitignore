@@ -13,3 +13,6 @@ script/deployments/*-pending.json
 
 .vercel
 .env*
+/dist/
+.vinext/
+.wrangler/

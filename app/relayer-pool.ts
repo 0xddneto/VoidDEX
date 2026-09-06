@@ -1,4 +1,4 @@
-import { keccak256, toHex, type Hex, type PublicClient } from 'viem';
+import { getAddress, keccak256, toHex, type Address, type Hex, type PublicClient } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 
 const PRIVATE_KEY = /^0x[0-9a-fA-F]{64}$/;
@@ -34,4 +34,14 @@ export async function selectRelayer(client: PublicClient, entropy: string): Prom
   if (healthy.length === 0) throw new Error('Every DEX relayer is unavailable or below its ETH reserve floor.');
   const seed = BigInt(keccak256(toHex(entropy)));
   return healthy[Number(seed % BigInt(healthy.length))]!.account;
+}
+
+export async function relayerPoolStatus(client: PublicClient) {
+  const accounts = configuredKeys().map((key) => privateKeyToAccount(key));
+  const floor = minimumBalance();
+  return Promise.all(accounts.map(async (account) => {
+    let balance = -1n;
+    try { balance = await client.getBalance({ address: account.address }); } catch { /* unavailable */ }
+    return { address: getAddress(account.address) as Address, balance, healthy: balance >= floor };
+  }));
 }

@@ -24,6 +24,8 @@ const tokenNames:Record<string,string> = Object.fromEntries([[VOID.toLowerCase()
 const permitTypes={Permit:[{name:'owner',type:'address'},{name:'spender',type:'address'},{name:'value',type:'uint256'},{name:'nonce',type:'uint256'},{name:'deadline',type:'uint256'}]} as const;
 const sponsoredTypes={Spend:[{name:'token',type:'address'},{name:'amount',type:'uint256'}],SpendNft:[{name:'collection',type:'address'},{name:'tokenId',type:'uint256'}],SponsoredCall:[{name:'user',type:'address'},{name:'tokenId',type:'uint256'},{name:'target',type:'address'},{name:'data',type:'bytes'},{name:'maxToll',type:'uint256'},{name:'maxGasVoid',type:'uint256'},{name:'callGasLimit',type:'uint256'},{name:'spends',type:'Spend[]'},{name:'nftSpends',type:'SpendNft[]'},{name:'nonce',type:'uint256'},{name:'deadline',type:'uint256'}]} as const;
 const split=(signature:Hex)=>({v:Number.parseInt(signature.slice(130,132),16),r:signature.slice(0,66) as Hex,s:`0x${signature.slice(66,130)}` as Hex});
+const secondaryRelay=process.env.NEXT_PUBLIC_VOIDDEX_SECONDARY_RELAY_ORIGIN?.replace(/\/$/,'');
+async function postRelay(body:string){const options:RequestInit={method:'POST',headers:{'content-type':'application/json'},body};try{const primary=await fetch('/relay',options);if(!secondaryRelay||![502,503,504].includes(primary.status))return primary}catch{if(!secondaryRelay)throw Error('The relay is unavailable.')}return fetch(`${secondaryRelay}/relay`,options)}
 
 export default function VoidDex({initialStates}:{initialStates:DexPoolState[]}){
  const initial=initialStates[0]!; const [account,setAccount]=useState<Address|null>(null),[pairI,setPairI]=useState(0),[fee,setFee]=useState(()=>BigInt(initial.fee ?? '0')),[r0,setR0]=useState(()=>BigInt(initial.reserve0)),[r1,setR1]=useState(()=>BigInt(initial.reserve1)),[lp,setLp]=useState(()=>BigInt(initial.totalSupply)),[mine,setMine]=useState(zero),[dir,setDir]=useState(true),[amount,setAmount]=useState('10'),[a0,setA0]=useState('100'),[a1,setA1]=useState('100'),[burn,setBurn]=useState(''),[busy,setBusy]=useState(''),[note,setNote]=useState(''),[feeReady,setFeeReady]=useState(initial.fee !== null);
@@ -89,7 +91,7 @@ export default function VoidDex({initialStates}:{initialStates:DexPoolState[]}){
     signature,
     permits:permits.map(x=>({...x,value:x.value.toString(),deadline:x.deadline.toString()})),
    };
-   const response=await fetch('/relay',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(relayRequest)});
+   const response=await postRelay(JSON.stringify(relayRequest));
    const body=await response.json() as {hash?:Hex;error?:string};
    if(!response.ok||!body.hash) throw Error(body.error??'Relay rejected the signed action.');
    requireSponsoredSuccess(await rpc.waitForTransactionReceipt({hash:body.hash}), PAYMASTER, account, 1n);

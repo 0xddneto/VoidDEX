@@ -2,18 +2,53 @@ import { createHash } from 'node:crypto';
 import pg from 'pg';
 import type { Address, Hex } from 'viem';
 
-export const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 2,
-  connectionTimeoutMillis: 5_000,
-});
+const relayOnly = process.env.RELAY_ONLY === '1';
+async function hyperdriveUrl(): Promise<string | null> {
+  if (!relayOnly) return null;
+  try {
+    const specifier = 'cloudflare:workers';
+    const cloudflare = await import(/* webpackIgnore: true */ specifier) as { env?: { HYPERDRIVE?: { connectionString?: string } } };
+    return cloudflare.env?.HYPERDRIVE?.connectionString ?? null;
+  } catch { return null; }
+}
+async function connectionString(session: boolean) {
+  return await hyperdriveUrl() ?? (session ? sessionUrl.toString() : process.env.DATABASE_URL);
+}
+async function isolatedClient(session: boolean): Promise<pg.PoolClient> {
+  const client = new pg.Client({ connectionString: await connectionString(session), statement_timeout: 15_000 });
+  await client.connect();
+  let released = false;
+  (client as pg.PoolClient).release = () => { if (!released) { released = true; void client.end().catch(() => undefined); } };
+  return client as pg.PoolClient;
+}
+function lazyPool(resolve: () => Promise<pg.Pool>, session: boolean): pg.Pool {
+  return new Proxy({} as pg.Pool, { get(_target, property) {
+    if (property === 'query') return async (...args: unknown[]) => {
+      if (!relayOnly) return resolve().then((value) => (value.query as (...values: unknown[]) => unknown)(...args));
+      const client = await isolatedClient(session);
+      try { return await (client.query as (...values: unknown[]) => Promise<unknown>)(...args); }
+      finally { client.release(); }
+    };
+    if (property === 'connect') return (...args: unknown[]) => relayOnly
+      ? isolatedClient(session)
+      : resolve().then((value) => (value.connect as (...values: unknown[]) => unknown)(...args));
+    if (property === 'end') return (...args: unknown[]) => resolve().then((value) => (value.end as (...values: unknown[]) => unknown)(...args));
+    return undefined;
+  }});
+}
 const REQUESTS_PER_MINUTE = 20;
 
 // Advisory session locks cannot use Neon's transaction pooler.
 const sessionUrl = new URL(process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? 'postgres://localhost/voidscan');
 if (sessionUrl.hostname.endsWith('.neon.tech')) sessionUrl.hostname = sessionUrl.hostname.replace('-pooler.', '.');
-export const sessionPool = new pg.Pool({ connectionString: sessionUrl.toString(), max: 2,
-  connectionTimeoutMillis: 5_000, idleTimeoutMillis: 10_000, statement_timeout: 15_000 });
+const pooled = (async () => new pg.Pool({ connectionString: await connectionString(false),
+  max: relayOnly ? 1 : 2, connectionTimeoutMillis: relayOnly ? 15_000 : 5_000,
+  idleTimeoutMillis: relayOnly ? 5_000 : 30_000 }))();
+const session = (async () => new pg.Pool({ connectionString: await connectionString(true),
+  max: relayOnly ? 1 : 2, connectionTimeoutMillis: relayOnly ? 15_000 : 5_000,
+  idleTimeoutMillis: relayOnly ? 5_000 : 10_000, statement_timeout: 15_000 }))();
+export const pool = lazyPool(() => pooled, false);
+export const sessionPool = lazyPool(() => session, true);
 
 export class RelayAdmissionError extends Error {
   constructor(message: string, readonly status: 409 | 429 | 503) {

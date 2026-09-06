@@ -161,7 +161,10 @@ export async function POST(request: Request) {
     await submission.confirmed(receipt.status === 'success');
     if (receipt.status !== 'success') return reject('Sponsored transaction reverted.', 502);
     return NextResponse.json({ hash: submission.hash });
-  } catch {
+  } catch (error) {
+    console.error('VoidDEX relay execution failed', error instanceof Error
+      ? { name: error.name, message: error.message, stack: error.stack }
+      : { message: 'Unknown relay failure' });
     if (broadcastHash) return NextResponse.json({hash:broadcastHash,status:'submitted'},{status:202});
     if (!broadcast) await reservation.failed().catch(() => undefined);
     return reject('Relay refused the signed action. Sign a new request and try again.', 502);
