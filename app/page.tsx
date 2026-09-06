@@ -13,6 +13,6 @@ export default async function Page() {
     const states = await Promise.all(DEX.pools.map((_, index) => poolState(index)));
     return <VoidDex initialStates={states} />;
   } catch {
-    return <main className="shell"><h1>VoidDEX</h1><p>Pool data is temporarily unavailable. Please reload shortly.</p><a href="https://voidscan-nu.vercel.app">Open VoidScan</a></main>;
+    return <main className="shell"><h1>VoidDEX</h1><p>Pool data is temporarily unavailable. Please reload shortly.</p><a href="https://www.voidchains.app">Open VoidScan</a></main>;
   }
 }
