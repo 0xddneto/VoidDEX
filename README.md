@@ -17,7 +17,9 @@ own token authorization before the first transfer.
 
 The VoidChain protocol, Deed, Runtime, DAO, Paymaster and VoidScan live in the
 separate `VoidChainApp` repository. This repository must not duplicate or own
-their governance.
+their governance. VoidScan does not include VoidDEX in its contract manifest,
+health status, supply ledger or public routes. Its chain profile discovers this
+gateway from the same on-chain application registry used for every dApp.
 
 ## Uniswap attribution
 

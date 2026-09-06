@@ -1,7 +1,8 @@
 import { getAddress } from 'viem';
 import deployment from '../lib/deployment-v11-hardened.json';
 
-// One deployment record is shared by VoidScan discovery and every DEX route.
+// VoidDEX owns this application deployment record. It pins the compatible
+// protocol release, but it is not part of the VoidScan release manifest.
 export const DEX = {
   chainId: deployment.chainId,
   deployBlock: deployment.deployBlock,
