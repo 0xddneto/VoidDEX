@@ -5,9 +5,12 @@ import deployment from '../lib/deployment-v11-hardened.json';
 export const DEX = {
   chainId: deployment.chainId,
   deployBlock: deployment.deployBlock,
+  deploymentId: deployment.deploymentId,
   manifestHash: deployment.manifestHash,
+  initialPolicyHash: deployment.initialPolicyHash,
   releaseId: deployment.releaseId,
   voidscanOrigin: deployment.signingOrigin,
+  codeHashes: deployment.criticalCodeHashes,
   rpc: 'https://robinhood-testnet.drpc.org',
   rpcUrls: ['https://robinhood-testnet.drpc.org', 'https://rpc.testnet.chain.robinhood.com'],
   voidToken: getAddress(deployment.baseToken),

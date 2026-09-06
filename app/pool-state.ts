@@ -1,4 +1,4 @@
-import { createPublicClient, fallback, http, parseAbi, type Address } from 'viem';
+import { createPublicClient, fallback, http, keccak256, parseAbi, type Address } from 'viem';
 import { DEX } from './dex-config';
 
 const rpc = createPublicClient({ transport: fallback(DEX.rpcUrls.map((url) => http(url))) });
@@ -10,13 +10,23 @@ export async function canonicalRelease() {
     cache: 'no-store', signal: AbortSignal.timeout(8_000),
   });
   if (!response.ok) throw new Error('VoidScan release is unavailable.');
-  const release = await response.json() as { chainId?: number; deployBlock?: number; manifestHash?: string; releaseId?: string; signingOrigin?: string };
+  const release = await response.json() as { chainId?: number; deploymentId?: string; deployBlock?: number; manifestHash?: string; initialPolicyHash?: string; releaseId?: string; signingOrigin?: string; codeHashes?: Record<string,string> };
   if (release.chainId !== DEX.chainId || release.deployBlock !== DEX.deployBlock
+    || release.deploymentId !== DEX.deploymentId || release.initialPolicyHash !== DEX.initialPolicyHash
     || release.manifestHash !== DEX.manifestHash || release.releaseId !== DEX.releaseId
     || release.signingOrigin !== DEX.voidscanOrigin) {
     throw new Error('VoidScan and VoidDEX release identities do not match. Signing is blocked.');
   }
-  return { releaseId: DEX.releaseId, manifestHash: DEX.manifestHash, deployBlock: DEX.deployBlock, releaseReady: true };
+  const critical = [
+    ['Runtime', DEX.runtime, DEX.codeHashes.runtime], ['Paymaster', DEX.paymaster, DEX.codeHashes.paymaster],
+    ['VOID token', DEX.voidToken, DEX.codeHashes.baseToken], ['Chain #1 DEX', DEX.app, DEX.codeHashes.app],
+  ] as const;
+  await Promise.all(critical.map(async ([label, address, expected]) => {
+    if (release.codeHashes?.[label] !== expected) throw new Error(`VoidScan code hash mismatch: ${label}.`);
+    const code = await rpc.getBytecode({ address });
+    if (!code || code === '0x' || keccak256(code) !== expected) throw new Error(`Live bytecode mismatch: ${label}. Signing is blocked.`);
+  }));
+  return { deploymentId: DEX.deploymentId, initialPolicyHash: DEX.initialPolicyHash, releaseId: DEX.releaseId, manifestHash: DEX.manifestHash, deployBlock: DEX.deployBlock, releaseReady: true };
 }
 
 export async function poolState(index: number, account?: Address) {

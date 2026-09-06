@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { createPublicClient, createWalletClient, custom, encodeFunctionData, fallback, formatUnits, http, maxUint256, parseAbi, parseUnits, type Address, type Hex } from 'viem';
+import { createPublicClient, createWalletClient, custom, encodeFunctionData, fallback, formatUnits, http, keccak256, maxUint256, parseAbi, parseUnits, type Address, type Hex } from 'viem';
 import { DEX, MAX_GAS_VOID, CALL_GAS_LIMIT } from './dex-config';
 import { requireSponsoredSuccess } from '../lib/sponsored-receipt';
 
@@ -19,7 +19,7 @@ const pairAbi=parseAbi(['function reserve0() view returns(uint256)','function re
 const dexAbi=parseAbi(['function swap(address,bool,uint256,uint256) returns(uint256)','function addLiquidity(address,uint256,uint256,uint256) returns(uint256)','function removeLiquidity(address,uint256,uint256,uint256) returns(uint256,uint256)','function claimTestAssets(uint256)']);
 type Provider={request:(args:{method:string;params?:unknown[]})=>Promise<unknown>;on?:(e:string,l:(a:unknown)=>void)=>void;removeListener?:(e:string,l:(a:unknown)=>void)=>void}; const provider=()=>typeof window==='undefined'?undefined:(window as Window & {ethereum?:Provider}).ethereum;
 const addr=(v:unknown)=>Array.isArray(v)&&typeof v[0]==='string'&&/^0x[\da-f]{40}$/i.test(v[0])?v[0] as Address:null; const units=(v:string)=>{try{return v&&Number(v)>0?parseUnits(v,18):zero}catch{return zero}}; const show=(v:bigint)=>Number(formatUnits(v,18)).toLocaleString('en-US',{maximumFractionDigits:4});
-export type DexPoolState={fee:string|null;reserve0:string;reserve1:string;totalSupply:string;balance:string;releaseId:string;manifestHash:string;deployBlock:number;releaseReady:boolean};
+export type DexPoolState={fee:string|null;reserve0:string;reserve1:string;totalSupply:string;balance:string;deploymentId:string;initialPolicyHash:string;releaseId:string;manifestHash:string;deployBlock:number;releaseReady:boolean};
 const tokenNames:Record<string,string> = Object.fromEntries([[VOID.toLowerCase(), 'VOID'], ...PAIRS.map(pool => [pool.asset.toLowerCase(), pool.name])]);
 const permitTypes={Permit:[{name:'owner',type:'address'},{name:'spender',type:'address'},{name:'value',type:'uint256'},{name:'nonce',type:'uint256'},{name:'deadline',type:'uint256'}]} as const;
 const sponsoredTypes={Spend:[{name:'token',type:'address'},{name:'amount',type:'uint256'}],SpendNft:[{name:'collection',type:'address'},{name:'tokenId',type:'uint256'}],SponsoredCall:[{name:'user',type:'address'},{name:'tokenId',type:'uint256'},{name:'target',type:'address'},{name:'data',type:'bytes'},{name:'maxToll',type:'uint256'},{name:'maxGasVoid',type:'uint256'},{name:'callGasLimit',type:'uint256'},{name:'spends',type:'Spend[]'},{name:'nftSpends',type:'SpendNft[]'},{name:'nonce',type:'uint256'},{name:'deadline',type:'uint256'}]} as const;
@@ -44,8 +44,14 @@ export default function VoidDex({initialStates}:{initialStates:DexPoolState[]}){
   try {
    const releaseResponse = await fetch(`/state?pair=${pairI}&account=${account}`, {cache:'no-store'});
    const releaseState = await releaseResponse.json();
-   if (!releaseResponse.ok || releaseState.releaseReady !== true || releaseState.releaseId !== DEX.releaseId || releaseState.manifestHash !== DEX.manifestHash) {
+   if (!releaseResponse.ok || releaseState.releaseReady !== true
+    || releaseState.deploymentId !== DEX.deploymentId || releaseState.initialPolicyHash !== DEX.initialPolicyHash
+    || releaseState.releaseId !== DEX.releaseId || releaseState.manifestHash !== DEX.manifestHash) {
     throw Error(releaseState.error ?? 'Release verification failed. Signing is blocked.');
+   }
+   for (const [address, expected] of [[RUNTIME, DEX.codeHashes.runtime], [PAYMASTER, DEX.codeHashes.paymaster], [VOID, DEX.codeHashes.baseToken], [DEX_APP, DEX.codeHashes.app]] as const) {
+    const code = await rpc.getBytecode({address});
+    if (!code || code === '0x' || keccak256(code) !== expected) throw Error('Live contract bytecode changed. Signing is blocked.');
    }
    await network(p);
    const wallet=createWalletClient({account,transport:custom(p)});
@@ -104,6 +110,6 @@ export default function VoidDex({initialStates}:{initialStates:DexPoolState[]}){
   </div><aside className="side"><section className="card fee"><span className="label">Chain fee per action</span><strong>{feeReady ? `${show(fee)} VOID` : 'Unavailable'}</strong><small>The Paymaster fronts parent-chain ETH. Unused execution budget is refunded.</small></section><section className="card"><div className="head"><h2>Pool</h2><span className="live">● live</span></div><div className="metric"><span>{s0} reserve</span><b>{show(r0)}</b></div><div className="metric"><span>{s1} reserve</span><b>{show(r1)}</b></div><div className="metric"><span>Total LP</span><b>{show(lp)}</b></div><div className="metric"><span>Your LP</span><b>{show(mine)}</b></div></section></aside></section>
   <section className="liquidity" id="pool"><div><span className="tag">Provide liquidity</span><h2>Earn the 0.30% pool fee.</h2><p>Liquidity positions use transferable V2 LP shares. Every change remains a Chain #1 action and is indexed by VoidScan.</p></div><div className="liquidityForm"><div className="two"><label><span>{s0}</span><input value={a0} onChange={e=>setA0(e.target.value)} inputMode="decimal"/></label><label><span>{s1}</span><input value={a1} onChange={e=>setA1(e.target.value)} inputMode="decimal"/></label></div><button className="action" disabled={!!busy || !feeReady} onClick={add}>{busy==='liquidity'?'Confirming…':'Add liquidity'}</button><div className="remove"><input value={burn} onChange={e=>setBurn(e.target.value)} placeholder="LP shares to remove" inputMode="decimal"/><button className="mutedBtn" disabled={!!busy || !feeReady} onClick={remove}>{busy==='remove'?'Confirming…':'Remove'}</button></div></div></section>
   <section className="testAssets"><div><b>Test assets</b><p>Claim tUSD and tLINK through Chain #1. The claim is indexed and pays the configured fee in VOID.</p></div><button className="mutedBtn" disabled={!!busy || !feeReady} onClick={claim}>{busy==='claim'?'Confirming…':'Claim test tokens'}</button></section>
-  <footer className="foot"><span>Release {DEX.releaseId}</span><span>DEX app {DEX_APP.slice(0, 6)}…{DEX_APP.slice(-4)}</span><span>Runtime {RUNTIME}</span><a href={DEX.voidscanOrigin}>Open VoidScan →</a></footer>
+  <footer className="foot"><span>Deployment {DEX.deploymentId}</span><span>Manifest {DEX.manifestHash}</span><span>DEX app {DEX_APP.slice(0, 6)}…{DEX_APP.slice(-4)}</span><span>Runtime {RUNTIME}</span><a href={DEX.voidscanOrigin}>Open VoidScan →</a></footer>
  </main>;
 }
